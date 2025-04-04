@@ -18,6 +18,7 @@ import io.modelcontextprotocol.spec.McpServerTransport;
 import io.modelcontextprotocol.spec.McpServerTransportProvider;
 import io.modelcontextprotocol.spec.McpServerSession;
 import io.modelcontextprotocol.util.Assert;
+import io.modelcontextprotocol.util.McpRequestContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -233,18 +234,23 @@ public class WebMvcSseServerTransportProvider implements McpServerTransportProvi
 		try {
 			return ServerResponse.sse(sseBuilder -> {
 				sseBuilder.onComplete(() -> {
-					logger.debug("SSE connection completed for session: {}", sessionId);
+					logger.info("SSE connection completed for session: {}", sessionId);
 					sessions.remove(sessionId);
+					McpRequestContext.clearParams(sessionId);
 				});
 				sseBuilder.onTimeout(() -> {
-					logger.debug("SSE connection timed out for session: {}", sessionId);
+					logger.info("SSE connection timed out for session: {}", sessionId);
 					sessions.remove(sessionId);
+					McpRequestContext.clearParams(sessionId);
 				});
 
 				WebMvcMcpSessionTransport sessionTransport = new WebMvcMcpSessionTransport(sessionId, sseBuilder);
 				McpServerSession session = sessionFactory.create(sessionTransport);
 				this.sessions.put(sessionId, session);
-
+				McpRequestContext.setSessionId(sessionId);
+				McpRequestContext.addParams(request.params().toSingleValueMap());
+				logger.debug("handleSseConnection session: {},sessions.size = {},McpRequestContext.size = {}",
+						sessionId, sessions.size(), McpRequestContext.getAllSize());
 				try {
 					sseBuilder.id(sessionId)
 						.event(ENDPOINT_EVENT_TYPE)
@@ -259,6 +265,7 @@ public class WebMvcSseServerTransportProvider implements McpServerTransportProvi
 		catch (Exception e) {
 			logger.error("Failed to send initial endpoint event to session {}: {}", sessionId, e.getMessage());
 			sessions.remove(sessionId);
+			McpRequestContext.clearParams(sessionId);
 			return ServerResponse.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
 		}
 	}
@@ -291,6 +298,7 @@ public class WebMvcSseServerTransportProvider implements McpServerTransportProvi
 		}
 
 		try {
+			McpRequestContext.setSessionId(sessionId);
 			String body = request.body(String.class);
 			McpSchema.JSONRPCMessage message = McpSchema.deserializeJsonRpcMessage(objectMapper, body);
 
@@ -306,6 +314,9 @@ public class WebMvcSseServerTransportProvider implements McpServerTransportProvi
 		catch (Exception e) {
 			logger.error("Error handling message: {}", e.getMessage());
 			return ServerResponse.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new McpError(e.getMessage()));
+		}
+		finally {
+			McpRequestContext.clearSessionId();
 		}
 	}
 

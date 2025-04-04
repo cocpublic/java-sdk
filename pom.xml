@@ -6,7 +6,7 @@
 
 	<groupId>io.modelcontextprotocol.sdk</groupId>
 	<artifactId>mcp-parent</artifactId>
-	<version>0.8.1</version>
+	<version>0.8.1-fix-beta1</version>
 
 	<packaging>pom</packaging>
 	<url>https://github.com/modelcontextprotocol/java-sdk</url>
@@ -355,5 +355,13 @@
 			</releases>
 		</repository>
 	</repositories>
+	<distributionManagement>
+		<!--稳定版本的仓库地址,必须是允许上传的私服地址-->
+		<repository>
+			<!--id和maven setting文件server id保持一致则不需要配置用户名密码，否则需要在pom中配置用户名密码-->
+			<id>android3_nexus</id>
+			<url>https://android3.weizhipin.com/nexus/content/repositories/host_sdk/</url>
+		</repository>
+	</distributionManagement>
 
 </project>

@@ -14,7 +14,10 @@ import java.util.function.Function;
 
 import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.util.Assert;
+import io.modelcontextprotocol.util.McpRequestContext;
 import io.modelcontextprotocol.util.Utils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -24,6 +27,8 @@ import reactor.core.scheduler.Schedulers;
  * @author Dariusz Jędrzejczyk
  */
 public class McpServerFeatures {
+
+	private static final Logger logger = LoggerFactory.getLogger(McpServerFeatures.class);
 
 	/**
 	 * Asynchronous server features specification.
@@ -108,9 +113,14 @@ public class McpServerFeatures {
 			List<BiFunction<McpAsyncServerExchange, List<McpSchema.Root>, Mono<Void>>> rootChangeConsumers = new ArrayList<>();
 
 			for (var rootChangeConsumer : syncSpec.rootsChangeConsumers()) {
-				rootChangeConsumers.add((exchange, list) -> Mono
-					.<Void>fromRunnable(() -> rootChangeConsumer.accept(new McpSyncServerExchange(exchange), list))
-					.subscribeOn(Schedulers.boundedElastic()));
+				rootChangeConsumers.add((exchange, list) -> {
+					final String sessionId = McpRequestContext.getSessionId();
+					return Mono.<Void>fromRunnable(() -> {
+						McpRequestContext.setSessionId(sessionId);
+						rootChangeConsumer.accept(new McpSyncServerExchange(exchange), list);
+						McpRequestContext.clearSessionId();
+					}).subscribeOn(Schedulers.boundedElastic());
+				});
 			}
 
 			return new Async(syncSpec.serverInfo(), syncSpec.serverCapabilities(), tools, resources,
@@ -222,10 +232,15 @@ public class McpServerFeatures {
 			if (tool == null) {
 				return null;
 			}
-			return new AsyncToolSpecification(tool.tool(),
-					(exchange, map) -> Mono
-						.fromCallable(() -> tool.call().apply(new McpSyncServerExchange(exchange), map))
-						.subscribeOn(Schedulers.boundedElastic()));
+			return new AsyncToolSpecification(tool.tool(), (exchange, map) -> {
+				final String sessionId = McpRequestContext.getSessionId();
+				return Mono.fromCallable(() -> {
+					McpRequestContext.setSessionId(sessionId);
+					McpSchema.CallToolResult result = tool.call().apply(new McpSyncServerExchange(exchange), map);
+					McpRequestContext.clearSessionId();
+					return result;
+				}).subscribeOn(Schedulers.boundedElastic());
+			});
 		}
 	}
 
@@ -264,10 +279,16 @@ public class McpServerFeatures {
 			if (resource == null) {
 				return null;
 			}
-			return new AsyncResourceSpecification(resource.resource(),
-					(exchange, req) -> Mono
-						.fromCallable(() -> resource.readHandler().apply(new McpSyncServerExchange(exchange), req))
-						.subscribeOn(Schedulers.boundedElastic()));
+			return new AsyncResourceSpecification(resource.resource(), (exchange, req) -> {
+				final String sessionId = McpRequestContext.getSessionId();
+				return Mono.fromCallable(() -> {
+					McpRequestContext.setSessionId(sessionId);
+					McpSchema.ReadResourceResult result = resource.readHandler()
+						.apply(new McpSyncServerExchange(exchange), req);
+					McpRequestContext.clearSessionId();
+					return result;
+				}).subscribeOn(Schedulers.boundedElastic());
+			});
 		}
 	}
 
@@ -310,10 +331,16 @@ public class McpServerFeatures {
 			if (prompt == null) {
 				return null;
 			}
-			return new AsyncPromptSpecification(prompt.prompt(),
-					(exchange, req) -> Mono
-						.fromCallable(() -> prompt.promptHandler().apply(new McpSyncServerExchange(exchange), req))
-						.subscribeOn(Schedulers.boundedElastic()));
+			return new AsyncPromptSpecification(prompt.prompt(), (exchange, req) -> {
+				final String sessionId = McpRequestContext.getSessionId();
+				return Mono.fromCallable(() -> {
+					McpRequestContext.setSessionId(sessionId);
+					McpSchema.GetPromptResult result = prompt.promptHandler()
+						.apply(new McpSyncServerExchange(exchange), req);
+					McpRequestContext.clearSessionId();
+					return result;
+				}).subscribeOn(Schedulers.boundedElastic());
+			});
 		}
 	}
 
@@ -471,8 +498,15 @@ public class McpServerFeatures {
 			if (tool == null) {
 				return null;
 			}
-			return new AsyncToolRegistration(tool.tool(),
-					map -> Mono.fromCallable(() -> tool.call().apply(map)).subscribeOn(Schedulers.boundedElastic()));
+			return new AsyncToolRegistration(tool.tool(), map -> {
+				final String sessionId = McpRequestContext.getSessionId();
+				return Mono.fromCallable(() -> {
+					McpRequestContext.setSessionId(sessionId);
+					McpSchema.CallToolResult result = tool.call().apply(map);
+					McpRequestContext.clearSessionId();
+					return result;
+				}).subscribeOn(Schedulers.boundedElastic());
+			});
 		}
 
 		public AsyncToolSpecification toSpecification() {
@@ -516,9 +550,15 @@ public class McpServerFeatures {
 			if (resource == null) {
 				return null;
 			}
-			return new AsyncResourceRegistration(resource.resource(),
-					req -> Mono.fromCallable(() -> resource.readHandler().apply(req))
-						.subscribeOn(Schedulers.boundedElastic()));
+			return new AsyncResourceRegistration(resource.resource(), req -> {
+				final String sessionId = McpRequestContext.getSessionId();
+				return Mono.fromCallable(() -> {
+					McpRequestContext.setSessionId(sessionId);
+					McpSchema.ReadResourceResult result = resource.readHandler().apply(req);
+					McpRequestContext.clearSessionId();
+					return result;
+				}).subscribeOn(Schedulers.boundedElastic());
+			});
 		}
 
 		public AsyncResourceSpecification toSpecification() {
@@ -565,9 +605,15 @@ public class McpServerFeatures {
 			if (prompt == null) {
 				return null;
 			}
-			return new AsyncPromptRegistration(prompt.prompt(),
-					req -> Mono.fromCallable(() -> prompt.promptHandler().apply(req))
-						.subscribeOn(Schedulers.boundedElastic()));
+			return new AsyncPromptRegistration(prompt.prompt(), req -> {
+				final String sessionId = McpRequestContext.getSessionId();
+				return Mono.fromCallable(() -> {
+					McpRequestContext.setSessionId(sessionId);
+					McpSchema.GetPromptResult result = prompt.promptHandler().apply(req);
+					McpRequestContext.clearSessionId();
+					return result;
+				}).subscribeOn(Schedulers.boundedElastic());
+			});
 		}
 
 		public AsyncPromptSpecification toSpecification() {
